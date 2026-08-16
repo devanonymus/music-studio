@@ -61,6 +61,8 @@ export default function MusicStudio() {
       BEATS_PER_MEASURE
     );
 
+    engine.setSubdivision(2);
+
     metronomeRef.current = engine;
 
     return () => {
@@ -99,15 +101,15 @@ export default function MusicStudio() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f4f2] pb-44">
+    <main className="min-h-screen bg-[#f3f3f1] pb-[150px]">
       <header className="border-b border-neutral-200 bg-white/95">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 px-6 py-8 md:flex-row md:items-end">
+        <div className="mx-auto flex max-w-[1420px] flex-col justify-between gap-6 px-6 py-7 md:flex-row md:items-end md:px-8">
           <div>
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-neutral-500">
               Music Studio
             </p>
 
-            <h1 className="text-3xl font-semibold tracking-tight text-neutral-950 md:text-5xl">
+            <h1 className="text-[34px] font-semibold tracking-[-0.04em] text-neutral-950 md:text-[46px]">
               Groove Demo 01
             </h1>
 
@@ -135,7 +137,7 @@ export default function MusicStudio() {
         </div>
       </header>
 
-      <section className="px-4 py-8 md:px-8 md:py-12">
+      <section className="px-4 py-7 md:px-8 md:py-9">
         <ScoreViewer
           currentMeasure={
             currentMeasure
@@ -145,14 +147,14 @@ export default function MusicStudio() {
         />
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200 bg-white/95 shadow-[0_-10px_40px_rgba(0,0,0,0.07)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-5">
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200/90 bg-white/95 shadow-[0_-12px_36px_rgba(0,0,0,0.055)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1420px] flex-col gap-3 px-6 py-3 md:px-8">
           <div className="flex items-center gap-4">
             <span className="w-12 text-sm font-medium text-neutral-500">
               {currentMeasure}
             </span>
 
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
+            <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-neutral-200">
               <div
                 className="h-full bg-neutral-950 transition-[width] duration-100"
                 style={{
@@ -198,7 +200,7 @@ export default function MusicStudio() {
                     value / 100
                   );
                 }}
-                className="w-28"
+                className="w-28 accent-neutral-950"
               />
 
               <span className="w-10 text-right text-xs text-neutral-500">
@@ -209,7 +211,7 @@ export default function MusicStudio() {
             <div className="flex items-center gap-3">
               <button
                 onClick={reset}
-                className="rounded-full border border-neutral-300 px-5 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-100"
+                className="rounded-full border border-neutral-300 bg-white px-5 py-2.5 text-[13px] font-semibold text-neutral-700 transition hover:bg-neutral-100"
               >
                 Reset
               </button>
@@ -218,7 +220,7 @@ export default function MusicStudio() {
                 onClick={
                   togglePlayback
                 }
-                className="flex min-w-[150px] items-center justify-center rounded-full bg-neutral-950 px-8 py-4 text-sm font-semibold text-white transition hover:scale-[1.02]"
+                className="flex min-w-[138px] items-center justify-center rounded-full bg-neutral-950 px-8 py-3 text-[13px] font-semibold text-white shadow-sm transition hover:bg-neutral-800"
               >
                 {isPlaying
                   ? "Pausa"
@@ -236,7 +238,7 @@ export default function MusicStudio() {
                 label="Beat"
                 value={
                   currentBeat
-                    ? `${currentBeat}/4`
+                    ? ["1", "&", "2", "&", "3", "&", "4", "&"][currentBeat - 1]
                     : "—"
                 }
               />
