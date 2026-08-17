@@ -1,19 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import {
   Renderer,
-  Stave,
-  StaveNote,
-  Voice,
-  Formatter,
-  Beam,
 } from "vexflow";
+
+import {
+  createDemoDrumScore,
+} from "@/data/demo-drum-score";
+
+import type {
+  DrumSubdivision,
+} from "@/lib/music/drumScore";
+
+import {
+  renderDrumMeasure,
+} from "@/lib/music/renderDrumMeasure";
 
 type ScoreViewerProps = {
   currentMeasure: number;
   currentBeat: number;
   isPlaying: boolean;
+  subdivision: DrumSubdivision;
 };
 
 type HighlightPoint = {
@@ -21,72 +34,23 @@ type HighlightPoint = {
   y: number;
 };
 
-type DrumStep = {
-  hihat?: boolean;
-  snare?: boolean;
-  kick?: boolean;
-};
-
-type DrumMeasure = {
-  steps: DrumStep[];
-};
-
-const TOTAL_MEASURES = 32;
-const MEASURES_PER_SYSTEM = 4;
-
 const PAGE_MAX_WIDTH = 1420;
 const SCORE_MAX_WIDTH = 1320;
 
-const MUSIC_SCALE = 0.88;
+const MUSIC_SCALE = 0.86;
 
-const SYSTEM_HEIGHT = 126;
-const TOP_MARGIN = 44;
-const SIDE_MARGIN = 48;
+const SYSTEM_HEIGHT = 132;
+const TOP_MARGIN = 46;
+const SIDE_MARGIN = 50;
 
-const HIGHLIGHT_WIDTH = 16;
-const HIGHLIGHT_HEIGHT = 70;
-
-const SCORE: DrumMeasure[] = Array.from(
-  { length: TOTAL_MEASURES },
-  (_, measureIndex) => ({
-    steps: [
-      {
-        hihat: true,
-        kick: true,
-      },
-      {
-        hihat: true,
-      },
-      {
-        hihat: true,
-        snare: true,
-      },
-      {
-        hihat: true,
-      },
-      {
-        hihat: true,
-        kick:
-          measureIndex % 2 === 0,
-      },
-      {
-        hihat: true,
-      },
-      {
-        hihat: true,
-        snare: true,
-      },
-      {
-        hihat: true,
-      },
-    ],
-  })
-);
+const HIGHLIGHT_WIDTH = 18;
+const HIGHLIGHT_HEIGHT = 66;
 
 export default function ScoreViewer({
   currentMeasure,
   currentBeat,
   isPlaying,
+  subdivision,
 }: ScoreViewerProps) {
   const scoreRef =
     useRef<HTMLDivElement | null>(null);
@@ -94,11 +58,26 @@ export default function ScoreViewer({
   const systemRefs =
     useRef<Record<number, HTMLDivElement | null>>({});
 
-  const [highlightMap, setHighlightMap] =
-    useState<Record<string, HighlightPoint>>({});
+  const [
+    highlightMap,
+    setHighlightMap,
+  ] = useState<
+    Record<string, HighlightPoint>
+  >({});
+
+  const score =
+    createDemoDrumScore(
+      subdivision
+    );
+
+  const measuresPerSystem =
+    subdivision === 16
+      ? 2
+      : 4;
 
   useEffect(() => {
-    const root = scoreRef.current;
+    const root =
+      scoreRef.current;
 
     if (!root) {
       return;
@@ -109,7 +88,8 @@ export default function ScoreViewer({
       | null = null;
 
     const drawScore = () => {
-      const element = scoreRef.current;
+      const element =
+        scoreRef.current;
 
       if (!element) {
         return;
@@ -144,23 +124,24 @@ export default function ScoreViewer({
 
       const contentWidth =
         logicalWidth -
-        logicalSideMargin * 2;
+        logicalSideMargin *
+          2;
 
       const measureWidth =
         contentWidth /
-        MEASURES_PER_SYSTEM;
+        measuresPerSystem;
 
-      const systems =
+      const numberOfSystems =
         Math.ceil(
-          TOTAL_MEASURES /
-            MEASURES_PER_SYSTEM
+          score.measures.length /
+            measuresPerSystem
         );
 
       const realHeight =
         TOP_MARGIN +
-        systems *
+        numberOfSystems *
           SYSTEM_HEIGHT +
-        40;
+        45;
 
       const renderer =
         new Renderer(
@@ -186,20 +167,17 @@ export default function ScoreViewer({
         HighlightPoint
       > = {};
 
-      SCORE.forEach(
+      score.measures.forEach(
         (measure, index) => {
-          const measureNumber =
-            index + 1;
-
           const systemIndex =
             Math.floor(
               index /
-                MEASURES_PER_SYSTEM
+                measuresPerSystem
             );
 
           const column =
             index %
-            MEASURES_PER_SYSTEM;
+            measuresPerSystem;
 
           const staveX =
             logicalSideMargin +
@@ -214,238 +192,26 @@ export default function ScoreViewer({
           const staveY =
             systemTop + 28;
 
-          /*
-           * =========================
-           * PENTAGRAMMA
-           * =========================
-           */
-
-          const stave =
-            new Stave(
+          const result =
+            renderDrumMeasure({
+              context,
+              score,
+              measure,
               staveX,
               staveY,
-              measureWidth
-            );
-
-          if (column === 0) {
-            stave.addClef(
-              "percussion"
-            );
-
-            if (
-              measureNumber === 1
-            ) {
-              stave.addTimeSignature(
-                "4/4"
-              );
-            }
-          }
-
-          stave
-            .setContext(context)
-            .draw();
-
-          /*
-           * Numero battuta
-           */
-
-          context.save();
-
-          context.setFont(
-            "Arial",
-            9,
-            "normal"
-          );
-
-          context.fillText(
-            String(
-              measureNumber
-            ),
-            staveX + 9,
-            staveY - 12
-          );
-
-          context.restore();
-
-          /*
-           * =========================
-           * UNA SOLA VOCE DRUM
-           * =========================
-           *
-           * Ogni ottavo è un singolo
-           * evento musicale.
-           *
-           * Se nello stesso istante
-           * abbiamo:
-           *
-           * HH + SNARE
-           *
-           * oppure
-           *
-           * HH + KICK
-           *
-           * le note vengono inserite
-           * nello stesso StaveNote.
-           */
-
-          const notes =
-            measure.steps.map(
-              (step) => {
-                const keys: string[] =
-                  [];
-
-                /*
-                 * Cassa
-                 */
-                if (step.kick) {
-                  keys.push(
-                    "f/3"
-                  );
-                }
-
-                /*
-                 * Rullante
-                 */
-                if (step.snare) {
-                  keys.push(
-                    "c/5"
-                  );
-                }
-
-                /*
-                 * Hi-hat
-                 */
-                if (step.hihat) {
-                  keys.push(
-                    "g/5/x2"
-                  );
-                }
-
-                return new StaveNote({
-                  clef:
-                    "percussion",
-
-                  keys,
-
-                  duration:
-                    "8",
-
-                  stemDirection:
-                    1,
-                });
-              }
-            );
-
-          /*
-           * =========================
-           * VOCE 4/4
-           * =========================
-           */
-
-          const voice =
-            new Voice({
-              numBeats: 4,
-              beatValue: 4,
+              measureWidth,
+              column,
+              musicScale:
+                MUSIC_SCALE,
             });
 
-          voice.addTickables(
-            notes
-          );
-
-          /*
-           * =========================
-           * SPAZIATURA
-           * =========================
-           */
-
-          const leftReserve =
-            column === 0
-              ? 80
-              : 28;
-
-          const rightReserve =
-            20;
-
-          const formatWidth =
-            measureWidth -
-            leftReserve -
-            rightReserve;
-
-          new Formatter()
-            .joinVoices([
-              voice,
-            ])
-            .format(
-              [voice],
-              formatWidth
-            );
-
-          voice.draw(
-            context,
-            stave
-          );
-
-          /*
-           * =========================
-           * BEAM
-           * =========================
-           *
-           * Due gruppi da quattro
-           * ottavi.
-           */
-
-          const beam1 =
-            new Beam(
-              notes.slice(
-                0,
-                4
-              )
-            );
-
-          const beam2 =
-            new Beam(
-              notes.slice(
-                4,
-                8
-              )
-            );
-
-          beam1
-            .setContext(
-              context
-            )
-            .draw();
-
-          beam2
-            .setContext(
-              context
-            )
-            .draw();
-
-          /*
-           * =========================
-           * HIGHLIGHT POSITIONS
-           * =========================
-           */
-
-          notes.forEach(
-            (
-              note,
-              stepIndex
-            ) => {
+          result.highlightPositions.forEach(
+            (position) => {
               positions[
-                `${measureNumber}-${stepIndex + 1}`
+                `${measure.number}-${position.step}`
               ] = {
-                x:
-                  note.getAbsoluteX() *
-                  MUSIC_SCALE,
-
-                y:
-                  (
-                    staveY +
-                    47
-                  ) *
-                  MUSIC_SCALE,
+                x: position.x,
+                y: position.y,
               };
             }
           );
@@ -489,14 +255,11 @@ export default function ScoreViewer({
         );
       }
     };
-  }, []);
+  }, [score]);
 
   /*
-   * =========================
    * AUTOSCROLL
-   * =========================
    */
-
   useEffect(() => {
     if (!isPlaying) {
       return;
@@ -505,35 +268,29 @@ export default function ScoreViewer({
     const system =
       Math.floor(
         (currentMeasure - 1) /
-          MEASURES_PER_SYSTEM
+          measuresPerSystem
       );
 
     systemRefs.current[
       system
     ]?.scrollIntoView({
-      behavior:
-        "smooth",
-
-      block:
-        "center",
+      behavior: "smooth",
+      block: "center",
     });
   }, [
     currentMeasure,
     isPlaying,
   ]);
 
-  const activeStep =
-    currentBeat;
-
   const highlight =
     highlightMap[
-      `${currentMeasure}-${activeStep}`
+      `${currentMeasure}-${currentBeat}`
     ];
 
-  const systems =
+  const numberOfSystems =
     Math.ceil(
-      TOTAL_MEASURES /
-        MEASURES_PER_SYSTEM
+      score.measures.length /
+        measuresPerSystem
     );
 
   return (
@@ -544,9 +301,6 @@ export default function ScoreViewer({
           PAGE_MAX_WIDTH,
       }}
     >
-
-      {/* SCORE HEADER */}
-
       <div className="mb-6 flex items-end justify-between px-1">
 
         <div>
@@ -555,7 +309,7 @@ export default function ScoreViewer({
           </p>
 
           <h2 className="mt-2 text-[28px] font-semibold tracking-[-0.035em] text-neutral-950">
-            Groove Demo 01
+            {score.title}
           </h2>
         </div>
 
@@ -572,17 +326,17 @@ export default function ScoreViewer({
             label="Suddivisione"
             value={
               currentBeat > 0
-                ? getSubdivisionLabel(
-                    currentBeat
+                ? subdivisionLabel(
+                    currentBeat,
+                    subdivision
                   )
                 : "-"
             }
           />
 
         </div>
-      </div>
 
-      {/* SCORE PAPER */}
+      </div>
 
       <div className="relative overflow-hidden rounded-[22px] border border-neutral-200 bg-white shadow-[0_16px_55px_rgba(0,0,0,0.045)]">
 
@@ -594,21 +348,22 @@ export default function ScoreViewer({
           }}
         >
 
-          {/* SYSTEM REFERENCES */}
-
           {Array.from({
             length:
-              systems,
+              numberOfSystems,
           }).map(
             (_, system) => (
               <div
                 key={system}
+
                 ref={(element) => {
                   systemRefs.current[
                     system
                   ] = element;
                 }}
+
                 className="pointer-events-none absolute left-0 right-0"
+
                 style={{
                   top:
                     TOP_MARGIN +
@@ -622,13 +377,12 @@ export default function ScoreViewer({
             )
           )}
 
-          {/* ACTIVE NOTE */}
-
           {isPlaying &&
-            activeStep > 0 &&
+            currentBeat > 0 &&
             highlight && (
               <div
                 className="pointer-events-none absolute z-20"
+
                 style={{
                   left:
                     highlight.x,
@@ -640,10 +394,9 @@ export default function ScoreViewer({
                     "translate(-50%, -50%)",
 
                   transition:
-                    "left 40ms linear, top 40ms linear",
+                    "none",
                 }}
               >
-
                 <div
                   style={{
                     width:
@@ -653,23 +406,20 @@ export default function ScoreViewer({
                       HIGHLIGHT_HEIGHT,
 
                     borderRadius:
-                      "6px",
+                      "7px",
 
                     background:
-                      "rgba(250,204,21,0.13)",
+                      "rgba(250,204,21,0.12)",
 
                     border:
-                      "1px solid rgba(234,179,8,0.72)",
+                      "1px solid rgba(234,179,8,0.70)",
 
                     boxShadow:
                       "0 0 8px rgba(234,179,8,0.10)",
                   }}
                 />
-
               </div>
             )}
-
-          {/* VEXFLOW */}
 
           <div
             ref={scoreRef}
@@ -677,29 +427,61 @@ export default function ScoreViewer({
           />
 
         </div>
+
       </div>
 
     </section>
   );
 }
 
-function getSubdivisionLabel(
-  subdivision: number
+function subdivisionLabel(
+  subdivisionIndex: number,
+  resolution: DrumSubdivision
 ) {
+  if (resolution === 4) {
+    const labels = [
+      "1",
+      "2",
+      "3",
+      "4",
+    ];
+
+    return (
+      labels[
+        subdivisionIndex - 1
+      ] ?? "-"
+    );
+  }
+
+  if (resolution === 8) {
+    const labels = [
+      "1",
+      "&",
+      "2",
+      "&",
+      "3",
+      "&",
+      "4",
+      "&",
+    ];
+
+    return (
+      labels[
+        subdivisionIndex - 1
+      ] ?? "-"
+    );
+  }
+
   const labels = [
-    "1",
-    "&",
-    "2",
-    "&",
-    "3",
-    "&",
-    "4",
-    "&",
+    "1", "e", "&", "a",
+    "2", "e", "&", "a",
+    "3", "e", "&", "a",
+    "4", "e", "&", "a",
   ];
 
   return (
     labels[
-      subdivision - 1
+      subdivisionIndex - 1
     ] ?? "-"
   );
 }

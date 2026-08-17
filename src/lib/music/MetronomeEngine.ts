@@ -3,6 +3,12 @@ export type MetronomeTickCallback = (
   measure: number
 ) => void;
 
+type VisualEvent = {
+  subdivision: number;
+  measure: number;
+  time: number;
+};
+
 export class MetronomeEngine {
   private audioContext: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -17,22 +23,40 @@ export class MetronomeEngine {
   private nextNoteTime = 0;
 
   private timerId: number | null = null;
+  private animationFrameId: number | null = null;
+
   private isRunning = false;
 
+  /*
+   * Audio schedulato 100ms in anticipo.
+   */
   private scheduleAheadTime = 0.1;
+
+  /*
+   * Scheduler audio controllato ogni 25ms.
+   */
   private lookahead = 25;
 
   private volume = 1;
 
+  /*
+   * Gli eventi visivi vengono messi qui.
+   * NON usiamo più setTimeout.
+   */
+  private visualQueue: VisualEvent[] = [];
+
   private onTick?: MetronomeTickCallback;
 
-  constructor(onTick?: MetronomeTickCallback) {
+  constructor(
+    onTick?: MetronomeTickCallback
+  ) {
     this.onTick = onTick;
   }
 
   private getContext() {
     if (!this.audioContext) {
-      this.audioContext = new AudioContext();
+      this.audioContext =
+        new AudioContext();
 
       this.masterGain =
         this.audioContext.createGain();
@@ -49,10 +73,11 @@ export class MetronomeEngine {
   }
 
   setBpm(bpm: number) {
-    this.bpm = Math.max(
-      20,
-      Math.min(300, bpm)
-    );
+    this.bpm =
+      Math.max(
+        20,
+        Math.min(300, bpm)
+      );
   }
 
   setTimeSignature(
@@ -73,10 +98,11 @@ export class MetronomeEngine {
   }
 
   setVolume(value: number) {
-    this.volume = Math.max(
-      0,
-      Math.min(1, value)
-    );
+    this.volume =
+      Math.max(
+        0,
+        Math.min(1, value)
+      );
 
     if (
       this.masterGain &&
@@ -89,6 +115,12 @@ export class MetronomeEngine {
       );
     }
   }
+
+  /*
+   * =================================
+   * AVANZAMENTO TEMPORALE
+   * =================================
+   */
 
   private nextNote() {
     const secondsPerBeat =
@@ -112,9 +144,16 @@ export class MetronomeEngine {
       totalSubdivisions
     ) {
       this.currentSubdivision = 0;
+
       this.currentMeasure++;
     }
   }
+
+  /*
+   * =================================
+   * CLICK AUDIO
+   * =================================
+   */
 
   private scheduleClick(
     subdivision: number,
@@ -143,9 +182,14 @@ export class MetronomeEngine {
       0;
 
     /*
-     * 1 = più forte
-     * 2 3 4 = medi
-     * & = più leggero
+     * Primo movimento:
+     * click più alto.
+     *
+     * Beat principali:
+     * click medio.
+     *
+     * Suddivisioni:
+     * click più leggero.
      */
     if (isFirstSubdivision) {
       oscillator.frequency.value =
@@ -189,26 +233,33 @@ export class MetronomeEngine {
     );
 
     oscillator.start(time);
+
     oscillator.stop(
       time + 0.05
     );
 
-    const delay =
-      Math.max(
-        0,
-        (
-          time -
-          context.currentTime
-        ) * 1000
-      );
-
-    window.setTimeout(() => {
-      this.onTick?.(
+    /*
+     * IMPORTANTISSIMO:
+     *
+     * Salviamo l'evento visivo
+     * usando ESATTAMENTE lo stesso
+     * timestamp AudioContext.
+     */
+    this.visualQueue.push({
+      subdivision:
         subdivision + 1,
-        measure
-      );
-    }, delay);
+
+      measure,
+
+      time,
+    });
   }
+
+  /*
+   * =================================
+   * AUDIO SCHEDULER
+   * =================================
+   */
 
   private scheduler = () => {
     if (
@@ -233,6 +284,62 @@ export class MetronomeEngine {
     }
   };
 
+  /*
+   * =================================
+   * VISUAL CLOCK
+   * =================================
+   *
+   * requestAnimationFrame controlla
+   * il vero clock AudioContext.
+   *
+   * Quindi highlight e click
+   * condividono la stessa timeline.
+   */
+
+  private visualLoop = () => {
+    if (
+      !this.audioContext ||
+      !this.isRunning
+    ) {
+      return;
+    }
+
+    const now =
+      this.audioContext.currentTime;
+
+    /*
+     * Recuperiamo tutti gli eventi
+     * che devono essere già visibili.
+     */
+    while (
+      this.visualQueue.length >
+        0 &&
+      this.visualQueue[0].time <=
+        now
+    ) {
+      const event =
+        this.visualQueue.shift();
+
+      if (event) {
+        this.onTick?.(
+          event.subdivision,
+          event.measure
+        );
+      }
+    }
+
+    this.animationFrameId =
+      requestAnimationFrame(
+        this.visualLoop
+      );
+  };
+
+  /*
+   * =================================
+   * START
+   * =================================
+   */
+
   async start() {
     if (this.isRunning) {
       return;
@@ -248,14 +355,27 @@ export class MetronomeEngine {
       await context.resume();
     }
 
-    this.isRunning = true;
+    /*
+     * Pulizia totale prima
+     * della nuova esecuzione.
+     */
+    this.visualQueue = [];
 
     this.currentSubdivision = 0;
     this.currentMeasure = 1;
 
-    this.nextNoteTime =
-      context.currentTime + 0.08;
+    this.isRunning = true;
 
+    /*
+     * Piccolo preroll tecnico.
+     */
+    this.nextNoteTime =
+      context.currentTime +
+      0.08;
+
+    /*
+     * Prepariamo audio.
+     */
     this.scheduler();
 
     this.timerId =
@@ -263,18 +383,48 @@ export class MetronomeEngine {
         this.scheduler,
         this.lookahead
       );
+
+    /*
+     * Avviamo il clock visivo.
+     */
+    this.animationFrameId =
+      requestAnimationFrame(
+        this.visualLoop
+      );
   }
+
+  /*
+   * =================================
+   * STOP
+   * =================================
+   */
 
   stop() {
     this.isRunning = false;
 
-    if (this.timerId !== null) {
+    if (
+      this.timerId !== null
+    ) {
       window.clearInterval(
         this.timerId
       );
 
       this.timerId = null;
     }
+
+    if (
+      this.animationFrameId !==
+      null
+    ) {
+      cancelAnimationFrame(
+        this.animationFrameId
+      );
+
+      this.animationFrameId =
+        null;
+    }
+
+    this.visualQueue = [];
 
     this.currentSubdivision = 0;
     this.currentMeasure = 1;
